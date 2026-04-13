@@ -11,51 +11,66 @@ const int BTN_PIN_G = 26;
 
 const int LED_PIN_R = 4;
 const int LED_PIN_G = 6;
-QueueHandle_t xQueueR;
-QueueHandle_t xQueueG;
+
+QueueHandle_t xQueueButId;
+QueueHandle_t xQueueButId_g;
 SemaphoreHandle_t xSemaphore_r;
 SemaphoreHandle_t xSemaphore_g;
 
-/* CALLBACK */
 void btn_callback(uint gpio, uint32_t events) {
-    if (events == 0x4) {
-        if (gpio == BTN_PIN_R)
+    if (events == 0x4) { // fall edge
+        if (gpio == BTN_PIN_R) {
             xSemaphoreGiveFromISR(xSemaphore_r, 0);
-        else if (gpio == BTN_PIN_G)
+        } else if (gpio == BTN_PIN_G) {
             xSemaphoreGiveFromISR(xSemaphore_g, 0);
-    }
-}
-
-/* BTN G */
-void btn_2_task(void *p) {
-    gpio_init(BTN_PIN_G);
-    gpio_set_dir(BTN_PIN_G, GPIO_IN);
-    gpio_pull_up(BTN_PIN_G);
-
-    gpio_set_irq_enabled_with_callback(BTN_PIN_G, GPIO_IRQ_EDGE_FALL, true, &btn_callback);
-
-    int delay = 0;
-
-    while (true) {
-        if (xSemaphoreTake(xSemaphore_g, pdMS_TO_TICKS(500))) {
-            if (delay < 1000) delay += 100;
-            else delay = 100;
-
-            xQueueSend(xQueueG, &delay, 0);
         }
     }
 }
 
-/* LED G */
+void led_1_task(void *p) {
+    gpio_init(LED_PIN_R);
+    gpio_set_dir(LED_PIN_R, GPIO_OUT);
+
+    int delay = 0;
+    while (true) {
+        if (xQueueReceive(xQueueButId, &delay, 0)) {
+            printf("R: %d\n", delay);
+        }
+        if (delay > 0) {
+            gpio_put(LED_PIN_R, 1);
+            vTaskDelay(pdMS_TO_TICKS(delay));
+            gpio_put(LED_PIN_R, 0);
+            vTaskDelay(pdMS_TO_TICKS(delay));
+        }
+    }
+}
+
+void btn_1_task(void *p) {
+    gpio_init(BTN_PIN_R);
+    gpio_set_dir(BTN_PIN_R, GPIO_IN);
+    gpio_pull_up(BTN_PIN_R);
+    gpio_set_irq_enabled_with_callback(BTN_PIN_R, GPIO_IRQ_EDGE_FALL, true,
+                                       &btn_callback);
+
+    int delay = 0;
+    while (true) {
+        if (xSemaphoreTake(xSemaphore_r, pdMS_TO_TICKS(500)) == pdTRUE) {
+            delay = (delay < 1000) ? delay + 100 : 100;
+            printf("delay btn R %d \n", delay);
+            xQueueSend(xQueueButId, &delay, 0);
+        }
+    }
+}
+
 void led_2_task(void *p) {
     gpio_init(LED_PIN_G);
     gpio_set_dir(LED_PIN_G, GPIO_OUT);
 
     int delay = 0;
-
     while (true) {
-        if (xQueueReceive(xQueueG, &delay, 0)) {}
-
+        if (xQueueReceive(xQueueButId_g, &delay, 0)) {
+            printf("G: %d\n", delay);
+        }
         if (delay > 0) {
             gpio_put(LED_PIN_G, 1);
             vTaskDelay(pdMS_TO_TICKS(delay));
@@ -65,23 +80,39 @@ void led_2_task(void *p) {
     }
 }
 
+void btn_2_task(void *p) {
+    gpio_init(BTN_PIN_G);
+    gpio_set_dir(BTN_PIN_G, GPIO_IN);
+    gpio_pull_up(BTN_PIN_G);
+    // Registra IRQ no mesmo callback (o pico SDK permite um callback global)
+    gpio_set_irq_enabled(BTN_PIN_G, GPIO_IRQ_EDGE_FALL, true);
+
+    int delay = 0;
+    while (true) {
+        if (xSemaphoreTake(xSemaphore_g, pdMS_TO_TICKS(500)) == pdTRUE) {
+            delay = (delay < 1000) ? delay + 100 : 100;
+            printf("delay btn G %d \n", delay);
+            xQueueSend(xQueueButId_g, &delay, 0);
+        }
+    }
+}
 
 int main() {
     stdio_init_all();
+    printf("Start RTOS \n");
 
-    /* FILAS */
-    xQueueR = xQueueCreate(32, sizeof(int));
-    xQueueG = xQueueCreate(32, sizeof(int));
+    xQueueButId   = xQueueCreate(32, sizeof(int));
+    xQueueButId_g = xQueueCreate(32, sizeof(int));
+    xSemaphore_r  = xSemaphoreCreateBinary();
+    xSemaphore_g  = xSemaphoreCreateBinary();
 
-    /* SEMÁFOROS */
-    xSemaphore_r = xSemaphoreCreateBinary();
-    xSemaphore_g = xSemaphoreCreateBinary();
-
-    /* TASKS (você ainda não criou as do R aqui!) */
-    xTaskCreate(led_2_task, "LED_G", 256, NULL, 1, NULL);
-    xTaskCreate(btn_2_task, "BTN_G", 256, NULL, 1, NULL);
+    xTaskCreate(led_1_task, "LED_Task 1", 256, NULL, 1, NULL);
+    xTaskCreate(btn_1_task, "BTN_Task 1", 256, NULL, 1, NULL);
+    xTaskCreate(led_2_task, "LED_Task 2", 256, NULL, 1, NULL);
+    xTaskCreate(btn_2_task, "BTN_Task 2", 256, NULL, 1, NULL);
 
     vTaskStartScheduler();
 
-    while (true);
+    while (true)
+        ;
 }
