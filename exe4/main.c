@@ -64,3 +64,24 @@ void led_2_task(void *p) {
         }
     }
 }
+
+
+int main() {
+    stdio_init_all();
+
+    /* FILAS */
+    xQueueR = xQueueCreate(32, sizeof(int));
+    xQueueG = xQueueCreate(32, sizeof(int));
+
+    /* SEMÁFOROS */
+    xSemaphore_r = xSemaphoreCreateBinary();
+    xSemaphore_g = xSemaphoreCreateBinary();
+
+    /* TASKS (você ainda não criou as do R aqui!) */
+    xTaskCreate(led_2_task, "LED_G", 256, NULL, 1, NULL);
+    xTaskCreate(btn_2_task, "BTN_G", 256, NULL, 1, NULL);
+
+    vTaskStartScheduler();
+
+    while (true);
+}
